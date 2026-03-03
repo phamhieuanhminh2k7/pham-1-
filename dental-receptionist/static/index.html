@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dental AI Receptionist — Test Client</title>
+  <script src="https://sdk.twilio.com/js/client/releases/1.14.0/twilio.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.1);
+      padding: 40px 48px;
+      width: 420px;
+      text-align: center;
+    }
+    h1 { font-size: 1.4rem; color: #1a202c; margin-bottom: 6px; }
+    .subtitle { font-size: .875rem; color: #718096; margin-bottom: 32px; }
+
+    .status-ring {
+      width: 96px; height: 96px;
+      border-radius: 50%;
+      background: #ebf8ff;
+      border: 3px solid #bee3f8;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 28px;
+      font-size: 2.4rem;
+      transition: background .3s, border-color .3s;
+    }
+    .status-ring.active   { background: #c6f6d5; border-color: #68d391; }
+    .status-ring.speaking { background: #fef3c7; border-color: #f6ad55; animation: pulse 1s infinite; }
+    .status-ring.error    { background: #fff5f5; border-color: #fc8181; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.05); }
+    }
+
+    #status-text { font-size: .95rem; color: #4a5568; margin-bottom: 28px; min-height: 22px; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 12px 28px;
+      border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: 600;
+      cursor: pointer; transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+    #btn-call   { background: #48bb78; color: #fff; }
+    #btn-hangup { background: #fc8181; color: #fff; display: none; }
+
+    .log {
+      margin-top: 28px;
+      background: #f7fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px 14px;
+      height: 160px;
+      overflow-y: auto;
+      text-align: left;
+      font-size: .78rem;
+      color: #4a5568;
+      line-height: 1.6;
+    }
+    .log .entry { margin-bottom: 2px; }
+    .log .entry.error { color: #c53030; }
+    .log .entry.info  { color: #2b6cb0; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🦷 Dental AI Receptionist</h1>
+  <p class="subtitle">Browser test client — Vietnam safe ✅</p>
+
+  <div class="status-ring" id="ring">📞</div>
+  <p id="status-text">Ready to call</p>
+
+  <button class="btn" id="btn-call">📞 &nbsp;Call AI Receptionist</button>
+  <button class="btn" id="btn-hangup">🔴 &nbsp;Hang Up</button>
+
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+  let device = null;
+  let activeCall = null;
+
+  const ring       = document.getElementById('ring');
+  const statusText = document.getElementById('status-text');
+  const btnCall    = document.getElementById('btn-call');
+  const btnHangup  = document.getElementById('btn-hangup');
+  const logDiv     = document.getElementById('log');
+
+  function log(msg, type = '') {
+    const el = document.createElement('div');
+    el.className = 'entry ' + type;
+    el.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+    logDiv.appendChild(el);
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  function setStatus(text, ringClass = '') {
+    statusText.textContent = text;
+    ring.className = 'status-ring ' + ringClass;
+  }
+
+  // ── Initialise Twilio Device ───────────────────────────────────────────────
+  async function initDevice() {
+    log('Fetching access token…', 'info');
+    try {
+      const res  = await fetch('/twilio/token');
+      const data = await res.json();
+      log('Token received — identity: ' + data.identity, 'info');
+
+      device = new Twilio.Device(data.token, {
+        codecPreferences: ['opus', 'pcmu'],
+        fakeLocalDTMF: true,
+        enableIceRestart: true,
+      });
+
+      device.on('ready', () => {
+        log('Twilio Device ready', 'info');
+        btnCall.disabled = false;
+        setStatus('Ready to call');
+      });
+
+      device.on('error', (err) => {
+        log('Device error: ' + err.message, 'error');
+        setStatus('Error — see log', 'error');
+      });
+
+      device.on('connect', (conn) => {
+        activeCall = conn;
+        log('Call connected', 'info');
+        setStatus('Connected — speak now', 'active');
+        btnCall.style.display   = 'none';
+        btnHangup.style.display = 'inline-flex';
+
+        conn.on('disconnect', onDisconnect);
+        conn.on('error', (e) => log('Call error: ' + e.message, 'error'));
+      });
+
+      device.on('disconnect', onDisconnect);
+
+    } catch (err) {
+      log('Init failed: ' + err, 'error');
+      setStatus('Failed to initialise', 'error');
+    }
+  }
+
+  function onDisconnect() {
+    log('Call ended');
+    activeCall = null;
+    setStatus('Call ended — ready again');
+    ring.className = 'status-ring';
+    ring.textContent = '📞';
+    btnCall.style.display   = 'inline-flex';
+    btnHangup.style.display = 'none';
+  }
+
+  // ── Button handlers ────────────────────────────────────────────────────────
+  btnCall.addEventListener('click', () => {
+    if (!device) { log('Device not ready', 'error'); return; }
+    log('Dialling…');
+    setStatus('Connecting…');
+    ring.textContent = '🔄';
+    device.connect();
+  });
+
+  btnHangup.addEventListener('click', () => {
+    if (activeCall) activeCall.disconnect();
+    else if (device) device.disconnectAll();
+  });
+
+  // ── Boot ───────────────────────────────────────────────────────────────────
+  btnCall.disabled = true;
+  initDevice();
+</script>
+</body>
+</html>

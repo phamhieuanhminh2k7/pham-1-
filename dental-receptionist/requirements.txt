@@ -1,0 +1,21 @@
+fastapi==0.135.1
+uvicorn[standard]==0.41.0
+websockets==14.1
+python-multipart==0.0.20
+python-dotenv==1.0.1
+httpx==0.28.1
+
+# Twilio
+twilio==9.10.2
+
+# AI services
+anthropic==0.84.0
+deepgram-sdk==3.11.0     # Pinned to v3.x — our code uses the v3 SDK API (v4+ has breaking changes)
+
+# Google Sheets
+google-auth==2.38.0
+google-api-python-client==2.190.0
+google-auth-oauthlib==1.2.1
+
+# Utilities
+pydantic-settings==2.13.1
