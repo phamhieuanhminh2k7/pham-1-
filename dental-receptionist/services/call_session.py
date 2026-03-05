@@ -63,24 +63,18 @@ class CallSession:
 
     async def run(self) -> None:
         """Drive the session.  Called once per call from the WS endpoint."""
-        # Load context in a background thread so it doesn't delay the greeting.
-        # Twilio's "start" event takes a few hundred ms, so context is usually
-        # ready before _greet() fires.
-        context_task = asyncio.create_task(
-            asyncio.to_thread(self._load_context)
-        )
-        await asyncio.gather(
-            self._twilio_receiver(),
-            self._response_handler(),
-            context_task,
-        )
-
-    def _load_context(self) -> None:
+        # Load config from Google Sheets before starting — context must be
+        # fully available when the greeting fires.
         try:
             self.context = sheets_service.get_full_context()
         except Exception as exc:
             logger.error(f"[{self.call_sid}] Failed to load context: {exc}")
             self.context = {}
+
+        await asyncio.gather(
+            self._twilio_receiver(),
+            self._response_handler(),
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Twilio receiver — reads every incoming WS message
