@@ -14,7 +14,6 @@ AI phone receptionist for a dental clinic.  Patients call a Twilio number (or us
 | Availability | Google Sheets A | Date/Time/Status rows — AI reads & updates |
 | Config | Google Sheets B | Hours, Services, Staff — client editable |
 | Notifications | Twilio SMS + WhatsApp sandbox | Patient SMS + dentist WhatsApp on every booking |
-| Dev tunneling | ngrok / Cloudflare Tunnel | Expose localhost to Twilio webhooks from Vietnam |
 
 ## Low-Latency Architecture (target < 1 s)
 
@@ -108,7 +107,7 @@ GOOGLE_SHEETS_CONFIG_ID         1mHKfp1T2ExVBgQ4nO4cBmU8VdWU7HgsSwKo7TM8eBMc
 GOOGLE_CREDENTIALS_PATH         google-credentials.json  (service account)
 
 # Server
-SERVER_URL                https://xxxx.ngrok-free.app  (no trailing slash)
+SERVER_URL                https://your-vps-domain.com  (no trailing slash)
 ```
 
 ## First-Time Setup Checklist
@@ -130,19 +129,12 @@ pip install -r requirements.txt
 1. Buy a US phone number in Twilio Console
 2. Create an API Key (Standard) → note SID + Secret
 3. Create a TwiML App:
-   - Voice Request URL: `https://YOUR_NGROK_URL/twilio/voice`  (POST)
+   - Voice Request URL: `https://YOUR_SERVER_URL/twilio/voice`  (POST)
    - Note the App SID
 4. Enable WhatsApp Sandbox: Twilio Console → Messaging → Try WhatsApp
 5. Send the join code from your WhatsApp to activate the sandbox
 
-### 4. ngrok tunnel
-```bash
-ngrok http 8000
-# Copy the https URL → paste into .env SERVER_URL
-# Also update your TwiML App Voice URL in Twilio Console
-```
-
-### 5. Run
+### 4. Run
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
@@ -172,8 +164,7 @@ To change the AI's tone or add rules: edit `build_system_prompt()` in
 `services/claude_service.py` (the "SPEAKING RULES" section).
 
 ## Demo Checklist (Zoom call with US client)
-- [ ] ngrok running → URL matches TwiML App + `.env`
-- [ ] `uvicorn main:app --reload` running
+- [ ] `uvicorn main:app --reload` running on VPS
 - [ ] Google Sheets populated with test slots
 - [ ] Browser: `localhost:8000/test-client` loaded in Chrome
 - [ ] Microphone permission granted
@@ -190,14 +181,10 @@ To change the AI's tone or add rules: edit `build_system_prompt()` in
 | `pydantic_settings` import error | `pip install pydantic-settings` |
 | Deepgram not connecting | Check `DEEPGRAM_API_KEY` in .env |
 | No audio from ElevenLabs | Verify `ELEVENLABS_VOICE_ID` is a valid voice ID |
-| Twilio 11200 webhook error | ngrok URL in TwiML App is wrong or server not running |
+| Twilio 11200 webhook error | SERVER_URL in TwiML App is wrong or server not running |
 | Google Sheets 403 | Service account not shared on the spreadsheet |
 | WhatsApp not delivered | Must join sandbox first (send join code from your phone) |
 | Browser client: "Device not ready" | Check browser console — usually a CORS or token issue |
 
-## Deployment (after testing)
-Recommended: **Railway.app** (free tier, one-click Python deploy, always-on)
-1. Push repo to GitHub
-2. railway.app → New Project → Deploy from GitHub
-3. Add all env vars in Railway dashboard
-4. Point Twilio TwiML App Voice URL to Railway URL (no ngrok needed)
+## Deployment
+Server runs on VPS with a fixed URL. Set `SERVER_URL` in `.env` to the VPS domain and point the Twilio TwiML App Voice URL to `SERVER_URL/twilio/voice`.

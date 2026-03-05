@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Dental AI Receptionist — Test Client</title>
-  <script src="https://sdk.twilio.com/js/client/releases/1.14.0/twilio.min.js"></script>
+  <script src="https://sdk.twilio.com/js/voice/releases/2.13.1/twilio.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -115,7 +115,7 @@
     ring.className = 'status-ring ' + ringClass;
   }
 
-  // ── Initialise Twilio Device ───────────────────────────────────────────────
+  // ── Initialise Twilio Device (Voice SDK v2) ───────────────────────────────
   async function initDevice() {
     log('Fetching access token…', 'info');
     try {
@@ -125,11 +125,10 @@
 
       device = new Twilio.Device(data.token, {
         codecPreferences: ['opus', 'pcmu'],
-        fakeLocalDTMF: true,
         enableIceRestart: true,
       });
 
-      device.on('ready', () => {
+      device.on('registered', () => {
         log('Twilio Device ready', 'info');
         btnCall.disabled = false;
         setStatus('Ready to call');
@@ -140,23 +139,23 @@
         setStatus('Error — see log', 'error');
       });
 
-      device.on('connect', (conn) => {
-        activeCall = conn;
-        log('Call connected', 'info');
-        setStatus('Connected — speak now', 'active');
-        btnCall.style.display   = 'none';
-        btnHangup.style.display = 'inline-flex';
-
-        conn.on('disconnect', onDisconnect);
-        conn.on('error', (e) => log('Call error: ' + e.message, 'error'));
-      });
-
-      device.on('disconnect', onDisconnect);
+      await device.register();
 
     } catch (err) {
       log('Init failed: ' + err, 'error');
       setStatus('Failed to initialise', 'error');
     }
+  }
+
+  function attachCallEvents(call) {
+    activeCall = call;
+    log('Call connected', 'info');
+    setStatus('Connected — speak now', 'active');
+    btnCall.style.display   = 'none';
+    btnHangup.style.display = 'inline-flex';
+
+    call.on('disconnect', onDisconnect);
+    call.on('error', (e) => log('Call error: ' + e.message, 'error'));
   }
 
   function onDisconnect() {
@@ -170,12 +169,13 @@
   }
 
   // ── Button handlers ────────────────────────────────────────────────────────
-  btnCall.addEventListener('click', () => {
+  btnCall.addEventListener('click', async () => {
     if (!device) { log('Device not ready', 'error'); return; }
     log('Dialling…');
     setStatus('Connecting…');
     ring.textContent = '🔄';
-    device.connect();
+    const call = await device.connect();
+    attachCallEvents(call);
   });
 
   btnHangup.addEventListener('click', () => {

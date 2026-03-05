@@ -136,11 +136,11 @@ def check_twilio():
         return False
 
 
-# ── 6. ngrok reachability ─────────────────────────────────────────────────────
+# ── 6. Server URL reachability ────────────────────────────────────────────────
 async def check_ngrok():
-    print("\n── ngrok / Server URL ──")
+    print("\n── Server URL ──")
     server_url = os.getenv("SERVER_URL", "")
-    if not server_url or "xxxx" in server_url:
+    if not server_url or "your-vps" in server_url:
         print(f"{FAIL} SERVER_URL not set in .env")
         return False
     try:
@@ -148,13 +148,13 @@ async def check_ngrok():
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(server_url + "/")
         if r.status_code == 200:
-            print(f"{PASS} {server_url} is reachable (server is running)")
+            print(f"{PASS} {server_url} is reachable")
             return True
         else:
             print(f"⚠️  {server_url} returned HTTP {r.status_code} — is the server running?")
             return False
     except Exception as e:
-        print(f"⚠️  {server_url} not reachable — start the server first, then re-run this check")
+        print(f"⚠️  {server_url} not reachable — is the server running?")
         return False
 
 
@@ -170,7 +170,7 @@ async def main():
     results["ElevenLabs"]    = await check_elevenlabs()
     results["Deepgram"]      = await check_deepgram()
     results["Twilio"]        = check_twilio()
-    results["ngrok/Server"]  = await check_ngrok()
+    results["Server URL"]    = await check_ngrok()
 
     print("\n" + "=" * 55)
     print("  Summary")

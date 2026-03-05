@@ -15,6 +15,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from enum import Enum
 
 from fastapi import WebSocket
@@ -24,6 +25,15 @@ from services import notification_service, sheets_service
 from utils.sentence_detector import extract_sentence, flush
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_for_tts(text: str) -> str:
+    """Strip markdown symbols that ElevenLabs would read aloud (e.g. 'asterisk')."""
+    text = re.sub(r'\*+', '', text)                        # * and **
+    text = re.sub(r'#{1,6}\s?', '', text)                  # # headers
+    text = re.sub(r'`+', '', text)                         # backticks
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)   # [text](url) → text
+    return text.strip()
 
 
 class State(str, Enum):
@@ -53,17 +63,24 @@ class CallSession:
 
     async def run(self) -> None:
         """Drive the session.  Called once per call from the WS endpoint."""
-        # Load config from Google Sheets once at the start of the call
+        # Load context in a background thread so it doesn't delay the greeting.
+        # Twilio's "start" event takes a few hundred ms, so context is usually
+        # ready before _greet() fires.
+        context_task = asyncio.create_task(
+            asyncio.to_thread(self._load_context)
+        )
+        await asyncio.gather(
+            self._twilio_receiver(),
+            self._response_handler(),
+            context_task,
+        )
+
+    def _load_context(self) -> None:
         try:
             self.context = sheets_service.get_full_context()
         except Exception as exc:
             logger.error(f"[{self.call_sid}] Failed to load context: {exc}")
             self.context = {}
-
-        await asyncio.gather(
-            self._twilio_receiver(),
-            self._response_handler(),
-        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Twilio receiver — reads every incoming WS message
@@ -82,12 +99,15 @@ class CallSession:
                     await self._transcript_queue.put("__GREET__")
 
                 elif event == "media":
-                    if self.state == State.LISTENING and self._deepgram:
+                    # Forward audio to Deepgram regardless of state so that
+                    # patient speech during SPEAKING triggers an interrupt.
+                    if self._deepgram:
                         audio = base64.b64decode(msg["media"]["payload"])
                         await self._deepgram.send(audio)
 
                 elif event == "stop":
                     logger.info(f"[{self.call_sid}] Call ended by Twilio")
+                    await self._stop_listening()
                     await self._transcript_queue.put(None)  # sentinel
                     break
 
@@ -135,9 +155,7 @@ class CallSession:
     async def _respond(self, user_text: str) -> None:
         logger.info(f"[{self.call_sid}] User: {user_text!r}")
         self.state = State.THINKING
-
-        # Stop Deepgram while we respond (patient is listening, not talking)
-        await self._stop_listening()
+        # Keep Deepgram running so patient speech during SPEAKING is detected.
 
         self.history.append({"role": "user", "content": user_text})
 
@@ -180,8 +198,7 @@ class CallSession:
         if booking_data and not self._interrupted:
             await self._handle_booking(booking_data)
 
-        # Resume listening
-        await self._start_listening()
+        self.state = State.LISTENING
 
     # ──────────────────────────────────────────────────────────────────────────
     # Booking
@@ -267,7 +284,8 @@ class CallSession:
 
     async def _speak_text(self, text: str) -> None:
         """Convert text → μ-law audio → stream to Twilio."""
-        if not text.strip():
+        text = _clean_for_tts(text)
+        if not text:
             return
         logger.debug(f"[{self.call_sid}] Speaking: {text!r}")
         async for audio_chunk in elevenlabs_service.stream_tts(text):

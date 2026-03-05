@@ -48,7 +48,7 @@ class DeepgramConnection:
         self._dg_connection.on(LiveTranscriptionEvents.Error, self._on_error)
 
         options = LiveOptions(
-            model="nova-2-phonecall",
+            model="nova-3",
             encoding="mulaw",
             sample_rate=8000,
             channels=1,
